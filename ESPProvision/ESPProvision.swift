@@ -66,8 +66,8 @@ public class ESPProvision {
             do {
                 let message = try createSetWifiConfigRequest(ssid: ssid, passphrase: passphrase)
                 if let message = message {
-                    transportLayer.SendConfigData(path: transportLayer.utility.configPath, data: message) { response, error in
-                        guard error == nil, response != nil else {
+                    transportLayer.SendConfigData(path: transportLayer.utility.configPath, data: message) { [weak self] response, error in
+                        guard error == nil, response != nil, let self = self else {
                             ESPLog.log("Error while sending config data error: \(error.debugDescription)")
                             completionHandler(Espressif_Status.internalError, error)
                             return
@@ -99,8 +99,8 @@ public class ESPProvision {
             do {
                 let message = try createApplyConfigRequest()
                 if let message = message {
-                    transportLayer.SendConfigData(path: transportLayer.utility.configPath, data: message) { response, error in
-                        guard error == nil, response != nil else {
+                    transportLayer.SendConfigData(path: transportLayer.utility.configPath, data: message) { [weak self] response, error in
+                        guard error == nil, response != nil, let self = self else {
                             ESPLog.log("Error while applying Wi-Fi configuration: \(error.debugDescription)")
                             completionHandler(Espressif_Status.internalError, error)
                             return
@@ -126,8 +126,8 @@ public class ESPProvision {
             let message = try createGetWifiConfigRequest()
             if let message = message {
                 transportLayer.SendConfigData(path: transportLayer.utility.configPath,
-                                         data: message) { response, error in
-                    guard error == nil, response != nil else {
+                                         data: message) { [weak self] response, error in
+                    guard error == nil, response != nil, let self = self else {
                         ESPLog.log("Error on polling request: \(error.debugDescription)")
                         completionHandler(Espressif_WifiStationState.disconnected, Espressif_WifiConnectFailedReason.UNRECOGNIZED(0), error)
                         return
@@ -135,8 +135,7 @@ public class ESPProvision {
                     
                     ESPLog.log("Response received.")
                     do {
-                        let (stationState, failReason) = try
-                            self.processGetWifiConfigStatusResponse(response: response)
+                        let (stationState, failReason) = try self.processGetWifiConfigStatusResponse(response: response)
                         if stationState == .connected {
                             ESPLog.log("Status: connected.")
                             completionHandler(stationState, Espressif_WifiConnectFailedReason.UNRECOGNIZED(0), nil)

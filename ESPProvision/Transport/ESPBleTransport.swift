@@ -22,7 +22,7 @@ import Foundation
 
 /// The `ESPBLEStatusDelegate` protocol define methods that provide information
 /// of current BLE device connection status
-protocol ESPBLEStatusDelegate {
+protocol ESPBLEStatusDelegate: AnyObject {
     
     /// Peripheral is connected successfully.
     func peripheralConnected()
@@ -42,7 +42,7 @@ protocol ESPBLEStatusDelegate {
 }
 
 /// Delegate which will receive events relating to BLE device scanning
-protocol ESPBLETransportDelegate {
+protocol ESPBLETransportDelegate: AnyObject {
     /// Peripheral devices found with matching Service UUID
     /// Callers should call the BLETransport.connect method with
     /// one of the peripherals found here
@@ -88,8 +88,8 @@ class ESPBleTransport: NSObject, ESPCommunicable {
 
     var currentRequestCompletionHandler: ((Data?, Error?) -> Void)?
 
-    public var delegate: ESPBLETransportDelegate?
-    var bleStatusDelegate: ESPBLEStatusDelegate?
+    public weak var delegate: ESPBLETransportDelegate?
+    weak var bleStatusDelegate: ESPBLEStatusDelegate?
 
     /// Create BLETransport object.
     ///
