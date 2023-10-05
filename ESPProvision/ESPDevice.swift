@@ -42,7 +42,7 @@ public enum ESPProvisionStatus {
 }
 
 /// Class needs to conform to `ESPBLEDelegate` protocol in order to receive callbacks related with BLE devices.
-public protocol ESPBLEDelegate {
+public protocol ESPBLEDelegate: AnyObject {
     /// Peripheral associated with this ESPDevice is connected
     ///
     /// - Parameters:
@@ -120,7 +120,7 @@ open class ESPDevice {
     /// Storing device version information
     public var versionInfo:NSDictionary?
     /// Store BLE delegate information
-    public var bleDelegate: ESPBLEDelegate?
+    public weak var bleDelegate: ESPBLEDelegate?
     /// Store username for sec1
     public var username: String?
     /// Advertisement data for BLE device
@@ -128,7 +128,8 @@ open class ESPDevice {
     public private(set) var advertisementData:[String:Any]?
     
     private var transportLayer: ESPCommunicable!
-    private var provision: ESPProvision!
+    private var provision: ESPProvision?
+    private var scanWifiManager: ESPWiFiManager?
     private var softAPPassword:String?
     private var retryScan = false
     
@@ -271,12 +272,12 @@ open class ESPDevice {
         }
         switch transport {
         case .ble:
-            espBleTransport.SendConfigData(path: path, data: encryptedData) { response, error in
+            espBleTransport.SendConfigData(path: path, data: encryptedData) { [weak self] response, error in
                 guard error == nil, response != nil else {
                     completionHandler(nil,.sendDataError(error!))
                     return
                 }
-                if let responseData = self.securityLayer.decrypt(data: response!) {
+                if let responseData = self?.securityLayer.decrypt(data: response!) {
                     completionHandler(responseData, nil)
                 } else {
                     completionHandler(nil,.encryptionError)
@@ -341,11 +342,11 @@ open class ESPDevice {
     private func provisionDevice(ssid: String, passPhrase: String = "", retryOnce: Bool, completionHandler: @escaping (ESPProvisionStatus) -> Void) {
         provision = ESPProvision(session: session)
         ESPLog.log("Configure wi-fi credentials in device.")
-        provision.configureWifi(ssid: ssid, passphrase: passPhrase) { status, error in
+        provision?.configureWifi(ssid: ssid, passphrase: passPhrase) { [weak self] status, error in
             ESPLog.log("Received configuration response.")
             switch status {
                 case .success:
-                    self.provision.applyConfigurations(completionHandler: { _, error in
+                    self?.provision?.applyConfigurations(completionHandler: { _, error in
                         DispatchQueue.main.async {
                             guard error == nil else {
                                 completionHandler(.failure(.configurationError(error!)))
@@ -361,6 +362,7 @@ open class ESPDevice {
                                 return
                             } else if wifiState == Espressif_WifiStationState.connected {
                                 completionHandler(.success)
+                                self?.provision = nil
                                 return
                             } else if wifiState == Espressif_WifiStationState.disconnected {
                                 completionHandler(.failure(.wifiStatusDisconnected))
@@ -380,12 +382,12 @@ open class ESPDevice {
                         }
                     })
                 default:
-                    if error != nil, self.isNetworkDisconnected(error: error!) {
+                    if error != nil, let isNetworkDisconnected = self?.isNetworkDisconnected(error: error!), isNetworkDisconnected {
                         DispatchQueue.main.async {
-                            self.connect { status in
+                            self?.connect { status in
                                 switch status {
                                 case .connected:
-                                    self.provisionDevice(ssid: ssid, passPhrase: passPhrase, retryOnce: false, completionHandler: completionHandler)
+                                    self?.provisionDevice(ssid: ssid, passPhrase: passPhrase, retryOnce: false, completionHandler: completionHandler)
                                     return
                                 default:
                                    completionHandler(.failure(.configurationError(error!)))
@@ -427,10 +429,10 @@ open class ESPDevice {
     private func scanDeviceForWifiList(completionHandler: @escaping ([ESPWifiNetwork]?,ESPWiFiScanError?) -> Void) {
         if let capability = self.capabilities, capability.contains(ESPConstants.wifiScanCapability) {
             self.wifiListCompletionHandler = completionHandler
-            let scanWifiManager: ESPWiFiManager = ESPWiFiManager(session: self.session!)
-            scanWifiManager.delegate = self
+            scanWifiManager = ESPWiFiManager(session: self.session!)
+            scanWifiManager?.delegate = self
             wifiListCompletionHandler = completionHandler
-            scanWifiManager.startWifiScan()
+            scanWifiManager?.startWifiScan()
         } else {
             completionHandler(nil,.emptyResultCount)
         }
@@ -527,16 +529,16 @@ open class ESPDevice {
         case .softap:
             session = ESPSession(transport: espSoftApTransport, security: securityLayer)
         }
-        session.initialize(response: nil, sessionPath: sessionPath) { error in
+        session.initialize(response: nil, sessionPath: sessionPath) { [weak self] error in
             guard error == nil else {
                 ESPLog.log("Init session error")
                 ESPLog.log("Error in establishing session \(error.debugDescription)")
-                self.connectionStatus = .failedToConnect(.sessionInitError)
-                completionHandler(self.connectionStatus)
+                self?.connectionStatus = .failedToConnect(.sessionInitError)
+                completionHandler(.failedToConnect(.sessionInitError))
                 return
             }
             ESPLog.log("Init session success")
-            self.connectionStatus = .connected
+            self?.connectionStatus = .connected
             completionHandler(.connected)
         }
     }
@@ -548,8 +550,8 @@ open class ESPDevice {
         switch transport {
         case .ble:
             ESPLog.log("Get Device Version Info")
-            espBleTransport.SendConfigData(path: espBleTransport.utility.versionPath, data: Data("ESP".utf8)) { response, error in
-                self.processVersionInfoResponse(response: response, error: error, completionHandler: completionHandler)
+            espBleTransport.SendConfigData(path: espBleTransport.utility.versionPath, data: Data("ESP".utf8)) { [weak self] response, error in
+                self?.processVersionInfoResponse(response: response, error: error, completionHandler: completionHandler)
             }
         default:
             espSoftApTransport.SendConfigData(path: espSoftApTransport.utility.versionPath, data: Data("ESP".utf8)) { response, error in
@@ -613,6 +615,7 @@ open class ESPDevice {
 extension ESPDevice: ESPScanWifiListProtocol {
     func wifiScanFinished(wifiList: [ESPWifiNetwork]?, error: ESPWiFiScanError?) {
         if let wifiResult = wifiList {
+            scanWifiManager = nil
             wifiListCompletionHandler?(wifiResult,nil)
             return
         }

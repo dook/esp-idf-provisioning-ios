@@ -69,7 +69,7 @@ class ESPSession {
             let request = try securityLayerPrivate.getNextRequestInSession(data: response)
             ESPLog.log("session intialize")
             if let request = request {
-                transportLayerPrivate.SendSessionData(data: request, sessionPath: sessionPath) { responseData, error in
+                transportLayerPrivate.SendSessionData(data: request, sessionPath: sessionPath) { [weak self] responseData, error in
                     
                     guard error == nil else {
                         ESPLog.log("Session error: \(error.debugDescription)")
@@ -79,7 +79,7 @@ class ESPSession {
                     
                     ESPLog.log("Received response.")
                     if let responseData = responseData {
-                        self.initialize(response: responseData, sessionPath: sessionPath,
+                        self?.initialize(response: responseData, sessionPath: sessionPath,
                                         completionHandler: completionHandler)
                     } else {
                         ESPLog.log("Session establishment failed.")

@@ -19,7 +19,7 @@
 import Foundation
 
 /// `ESPScanWifiListProtocol` provides Wi-Fi scan result to conforming class.
-protocol ESPScanWifiListProtocol {
+protocol ESPScanWifiListProtocol: AnyObject {
     func wifiScanFinished(wifiList: [ESPWifiNetwork]?, error: ESPWiFiScanError?)
 }
 
@@ -29,7 +29,7 @@ class ESPWiFiManager {
     private let security: ESPCodeable
     private var scanResult: [String: Espressif_WiFiScanResult] = [:]
 
-    var delegate: ESPScanWifiListProtocol?
+    weak var delegate: ESPScanWifiListProtocol?
 
     /// Initialise Wi-Fi manager instance.
     ///
@@ -44,13 +44,13 @@ class ESPWiFiManager {
         do {
             let payloadData = try createStartScanRequest()
             if let data = payloadData {
-                transport.SendConfigData(path: transport.utility.scanPath, data: data) { response, error in
-                    guard error == nil, response != nil else {
-                        self.delegate?.wifiScanFinished(wifiList: nil, error: .scanRequestError(error!))
+                transport.SendConfigData(path: transport.utility.scanPath, data: data) { [weak self] response, error in
+                    guard error == nil, let response = response else {
+                        self?.delegate?.wifiScanFinished(wifiList: nil, error: .scanRequestError(error!))
                         return
                     }
-                    self.processStartScan(responseData: response!)
-                    self.getWiFiScanStatus()
+                    self?.processStartScan(responseData: response)
+                    self?.getWiFiScanStatus()
                 }
             } else {
                 delegate?.wifiScanFinished(wifiList: nil, error: .emptyConfigData)
@@ -73,16 +73,15 @@ class ESPWiFiManager {
         do {
             let payloadData = try createWifiScanConfigRequest()
             if let data = payloadData {
-                transport.SendConfigData(path: transport.utility.scanPath, data: data) { response, error in
-                    guard error == nil, response != nil else {
-                        self.delegate?.wifiScanFinished(wifiList: nil, error: .scanRequestError(error!))
+                transport.SendConfigData(path: transport.utility.scanPath, data: data) { [weak self] response, error in
+                    guard error == nil, let response = response else {
+                        self?.delegate?.wifiScanFinished(wifiList: nil, error: .scanRequestError(error!))
                         return
                     }
-                    let scanCount = self.processGetWiFiScanStatus(responseData: response!)
-                    if scanCount > 0 {
-                        self.getScannedWiFiListResponse(count: scanCount)
+                    if let scanCount = self?.processGetWiFiScanStatus(responseData: response), scanCount > 0 {
+                        self?.getScannedWiFiListResponse(count: scanCount)
                     } else {
-                        self.delegate?.wifiScanFinished(wifiList: nil, error: .emptyResultCount)
+                        self?.delegate?.wifiScanFinished(wifiList: nil, error: .emptyResultCount)
                     }
                 }
             }
@@ -115,14 +114,14 @@ class ESPWiFiManager {
             }
             let payloadData = try createWifiListConfigRequest(startIndex: startIndex, count: fetchCount)
             if let data = payloadData {
-                transport.SendConfigData(path: transport.utility.scanPath, data: data) { response, error in
-                    guard error == nil, response != nil else {
-                        self.delegate?.wifiScanFinished(wifiList: nil, error: .scanRequestError(error!))
+                transport.SendConfigData(path: transport.utility.scanPath, data: data) { [weak self] response, error in
+                    guard error == nil, let response = response else {
+                        self?.delegate?.wifiScanFinished(wifiList: nil, error: .scanRequestError(error!))
                         return
                     }
-                    self.getScannedWifiSSIDs(response: response!, fetchFinish: lastFetch)
+                    self?.getScannedWifiSSIDs(response: response, fetchFinish: lastFetch)
                     if startIndex + fetchCount < count {
-                        self.getScannedWiFiListResponse(count: count, startIndex: startIndex + 4)
+                        self?.getScannedWiFiListResponse(count: count, startIndex: startIndex + 4)
                     }
                 }
             } else {
